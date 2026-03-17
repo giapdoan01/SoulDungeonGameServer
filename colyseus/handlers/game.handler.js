@@ -27,18 +27,40 @@ class GameHandler {
     }
 
     /**
-     * Client cập nhật vị trí và hướng nhìn.
+     * Client gửi vị trí + hướng nhìn.
      * data: { x: number, y: number, facing: number }
-     * Server chỉ broadcast lại qua state patch — client khác sẽ nhận qua schema sync.
+     *
+     * Luồng:
+     *   1. Validate player tồn tại và trận đang chạy
+     *   2. Lưu vào state  → dùng khi có late joiner cần đọc vị trí ban đầu
+     *   3. broadcast "playerMoved" đến tất cả client KHÁC (except người gửi)
+     *      → client nhận message này để lerp remote character
      */
     static handleMove(room, client, data) {
         const player = room.state.players.get(client.sessionId);
         if (!player) return;
         if (room.state.status !== 'playing') return;
 
-        if (typeof data?.x       === 'number') player.x      = data.x;
-        if (typeof data?.y       === 'number') player.y      = data.y;
-        if (typeof data?.facing  === 'number') player.facing = data.facing;
+        // Validate kiểu dữ liệu
+        const x      = typeof data?.x      === 'number' ? data.x      : player.x;
+        const y      = typeof data?.y      === 'number' ? data.y      : player.y;
+        const facing = typeof data?.facing === 'number' ? data.facing : player.facing;
+        // speed: client gui len 0 (dung) hoac 1 (di chuyen) — server chi relay lai, khong tinh toan
+        const speed  = typeof data?.speed  === 'number' ? data.speed  : 0;
+
+        // Lưu vào state (late joiner reference)
+        player.x      = x;
+        player.y      = y;
+        player.facing = facing;
+
+        // Broadcast đến client KHÁC — không gửi lại cho chính người gửi
+        room.broadcast("playerMoved", {
+            sessionId: client.sessionId,
+            x,
+            y,
+            facing,
+            speed,   // [ANIMATION SYNC] relay speed de remote client biet chay anim nao
+        }, { except: client });
     }
 }
 

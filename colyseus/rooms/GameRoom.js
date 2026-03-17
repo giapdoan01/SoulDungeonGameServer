@@ -58,7 +58,7 @@ class GameRoom extends Room {
         player.x                = 0;
         player.y                = 0;
         player.facing           = 0;
-        player.isReady          = false;
+        player.isReady          = true;   // auto-ready, không cần chọn char
 
         this.state.players.set(client.sessionId, player);
 
@@ -67,12 +67,27 @@ class GameRoom extends Room {
         // Báo cho client này biết đã vào phòng thành công
         client.send("gameReady", {
             matchId:   this.state.matchId,
-            sessionId: client.sessionId,  // GameRoom sessionId (dùng để identify bản thân trong state)
+            sessionId: client.sessionId,
         });
 
-        // Nếu đủ người → chờ setCharacter rồi mới allReady
-        // (logic allReady nằm trong game.handler.js)
-        LoggerService.info(`[GameRoom] ${this.state.players.size}/${this._allowedPlayers.size} players joined`);
+        const joined = this.state.players.size;
+        const total  = this._allowedPlayers.size;
+        LoggerService.info(`[GameRoom] ${joined}/${total} players joined`);
+
+        // Đủ người → bắt đầu trận ngay
+        if (joined >= total && this.state.status === 'waiting') {
+            this.state.status = 'playing';
+
+            // Gửi snapshot đầy đủ danh sách player — client spawn từ đây, không phụ thuộc schema sync
+            const players = [...this.state.players.values()].map(p => ({
+                sessionId:      p.sessionId,
+                username:       p.username,
+                characterIndex: p.characterIndex,
+            }));
+
+            this.broadcast("allReady", { matchId: this.state.matchId, players });
+            LoggerService.success(`[GameRoom] Tất cả đã vào — bắt đầu trận: ${this.state.matchId}`);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
